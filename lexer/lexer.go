@@ -34,8 +34,16 @@ func (l *DraskenLexer) GenerateTokens() []Token {
 
 	scanner := bufio.NewScanner(strings.NewReader(l.input))
 	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Skip comment lines based on prefixes
+		if l.shouldSkipLine(line) {
+			l.linePosition++
+			continue
+		}
+
 		l.columnPosition = 0
-		tok := l.generateLineTokens(scanner.Text())
+		tok := l.generateLineTokens(line)
 		if tok != nil {
 			tokens = append(tokens, tok...)
 		}
@@ -176,4 +184,15 @@ func isWhitespace(ch byte) bool {
 // isAlphanumericOrUnderscore checks whether a character is a letter, digit, or underscore.
 func isAlphanumericOrUnderscore(ch byte) bool {
 	return isLetter(ch) || isDigit(ch) || isUnderscore(ch)
+}
+
+// shouldSkipLine returns true if the line starts with any comment prefix
+func (l *DraskenLexer) shouldSkipLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	for _, prefix := range l.commentPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }
