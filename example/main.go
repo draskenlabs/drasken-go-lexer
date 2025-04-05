@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/drasken/drasken-go-lexer/src/github.com/drasken-go-lexer/lexer"
+	"github.com/draskenlabs/drasken-go-lexer/lexer"
 )
 
 func main() {
