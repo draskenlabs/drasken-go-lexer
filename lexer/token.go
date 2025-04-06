@@ -11,8 +11,10 @@ const (
 	EOF                      // End of file/input
 
 	// Literal tokens
-	IDENT // Identifier (e.g., variable names, function names)
-	INT   // Integer literals (e.g., 42, 1234)
+	IDENT  // Identifier (e.g., variable names, function names)
+	INT    // Integer literals (e.g., 42, 1234)
+	STRING // String literals (e.g., "hello")
+	BOOL   // Boolean literals (true, false)
 
 	// Operators
 	ASSIGN   // =  (assignment operator)
@@ -49,6 +51,8 @@ var tokenTypeNames = [...]string{
 	EOF:       "EOF",
 	IDENT:     "IDENT",
 	INT:       "INT",
+	STRING:    "STRING",
+	BOOL:      "BOOL",
 	ASSIGN:    "ASSIGN",
 	PLUS:      "PLUS",
 	MINUS:     "MINUS",
@@ -137,10 +141,15 @@ func GenerateNewToken(literal string, start int, end int, line int) Token {
 		tokenType = LBRACKET
 	case "]":
 		tokenType = RBRACKET
+	case "true", "false":
+		tokenType = BOOL
 	default:
 		// If the literal doesn't match a known operator or punctuation,
-		// determine if it's an INT or IDENT based on its first character.
-		if isDigit(literal[0]) {
+		// determine if it's an INT, STRING, or IDENT based on its first character.
+		if len(literal) > 1 && ((literal[0] == '"' && literal[len(literal)-1] == '"') ||
+			(literal[0] == '\'' && literal[len(literal)-1] == '\'')) {
+			tokenType = STRING
+		} else if isDigit(literal[0]) {
 			tokenType = INT
 		} else if isLetter(literal[0]) || isUnderscore(literal[0]) {
 			tokenType = IDENT
@@ -163,7 +172,7 @@ func GenerateNewToken(literal string, start int, end int, line int) Token {
 // This is mainly useful for debugging or printing token streams.
 func (t Token) String() string {
 	return fmt.Sprintf(
-		"Type: %s, Literal: '%s', Start: %d, End: %d, Line: %d",
+		"Token(Type: %s, Literal: '%s', Start: %d, End: %d, Line: %d)",
 		tokenTypeNames[t.Type], t.Literal, t.Start, t.End, t.Line,
 	)
 }
