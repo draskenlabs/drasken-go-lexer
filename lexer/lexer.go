@@ -1,8 +1,6 @@
 package lexer
 
 import (
-	"bufio"
-	"fmt"
 	"strings"
 )
 
@@ -31,10 +29,10 @@ func NewLexer(input string, commentPrefixes []string) *DraskenLexer {
 // to generateLineTokens. At the end, it appends an EOF token.
 func (l *DraskenLexer) GenerateTokens() []Token {
 	tokens := []Token{}
+	lines := strings.Split(l.input, "\n")
 
-	scanner := bufio.NewScanner(strings.NewReader(l.input))
-	for scanner.Scan() {
-		line := scanner.Text()
+	for l.linePosition < len(lines) {
+		line := lines[l.linePosition]
 
 		// Skip comment lines based on prefixes
 		if l.shouldSkipLine(line) {
@@ -43,16 +41,68 @@ func (l *DraskenLexer) GenerateTokens() []Token {
 		}
 
 		l.columnPosition = 0
-		tok := l.generateLineTokens(line)
-		if tok != nil {
-			tokens = append(tokens, tok...)
-		}
-		l.linePosition++
-	}
+		lineLen := len(line)
 
-	// Handle potential scanner error
-	if err := scanner.Err(); err != nil {
-		fmt.Println("Error reading lines:", err)
+		for l.columnPosition < lineLen {
+			ch := line[l.columnPosition]
+
+			// Skip over whitespace
+			if isWhitespace(ch) {
+				l.columnPosition++
+				continue
+			}
+
+			// Handle multi-line backtick strings
+			if ch == '`' {
+				startLine := l.linePosition
+				startColumn := l.columnPosition
+				var content strings.Builder
+				content.WriteByte('`')
+				l.columnPosition++
+
+				terminated := false
+				for !terminated && l.linePosition < len(lines) {
+					line := lines[l.linePosition]
+					for l.columnPosition < len(line) {
+						ch := line[l.columnPosition]
+						if ch == '`' {
+							content.WriteByte('`')
+							l.columnPosition++
+							terminated = true
+							break
+						} else {
+							content.WriteByte(ch)
+							l.columnPosition++
+						}
+					}
+					if !terminated {
+						content.WriteString("\n")
+						l.linePosition++
+						l.columnPosition = 0
+					}
+				}
+
+				tokens = append(tokens, Token{
+					Type:    STRING,
+					Literal: content.String(),
+					Start:   startColumn,
+					End:     l.columnPosition,
+					Line:    startLine,
+				})
+
+				// Do NOT increment linePosition here — it's handled below the outer loop
+				continue
+			}
+
+			literalStart := l.columnPosition
+			literal := l.generateLiteral(line)
+			if strings.TrimSpace(literal) != "" {
+				token := GenerateNewToken(literal, literalStart, l.columnPosition, l.linePosition)
+				tokens = append(tokens, token)
+			}
+		}
+
+		l.linePosition++
 	}
 
 	// Append EOF token at the end of token stream
@@ -66,79 +116,75 @@ func (l *DraskenLexer) GenerateTokens() []Token {
 	return tokens
 }
 
-// generateLineTokens parses a single line of input into tokens by repeatedly
-// extracting literals using generateLiteral, skipping over whitespace.
-func (l *DraskenLexer) generateLineTokens(line string) []Token {
-	tokens := []Token{}
-	lineLen := len(line)
-
-	for l.columnPosition < lineLen {
-		ch := line[l.columnPosition]
-
-		// Skip over whitespace
-		if isWhitespace(ch) {
-			l.columnPosition++
-			continue
-		}
-
-		literalStart := l.columnPosition
-		literal := l.generateLiteral(line)
-		if strings.TrimSpace(literal) != "" {
-			token := GenerateNewToken(literal, literalStart, l.columnPosition, l.linePosition)
-			tokens = append(tokens, token)
-		}
-	}
-
-	return tokens
-}
-
 // generateLiteral attempts to extract the next valid token literal from the current line.
 // It handles identifiers, numbers, operators (including ==), and punctuation.
-// Comment prefix detection is also performed to skip irrelevant lines.
 func (l *DraskenLexer) generateLiteral(line string) string {
-	var literal string
-	i := l.columnPosition
+	start := l.columnPosition
+	ch := line[start]
 
-	for i < len(line) {
-		ch := line[i]
-
-		// Check if the current character starts a known comment prefix
-		isKnownComment := true
-		for _, prefix := range l.commentPrefixes {
-			if strings.HasPrefix(strings.TrimSpace(string(ch)), prefix) {
-				isKnownComment = false
+	// Handle quoted strings (single or double)
+	if ch == '"' || ch == '\'' {
+		quote := ch
+		i := start + 1
+		for i < len(line) {
+			if line[i] == quote {
+				i++
 				break
 			}
-		}
-		if !isKnownComment {
-			i = len(line) // skip rest of the line
-			break
-		} else if isWhitespace(ch) {
-			break
-		} else if isAlphanumericOrUnderscore(ch) {
-			literal += string(ch) // build identifier or number
-		} else if literal != "" && (isOperator(ch) || isPunctuation(ch)) {
-			break // stop if operator or punctuation follows a literal
-		} else if isOperator(ch) {
-			// Detect double-character operators (e.g., ==)
-			if ch == '=' && i+1 < len(line) && line[i+1] == '=' {
-				literal += "=="
-				i += 2
-			} else {
-				literal += string(ch)
-				i++
-			}
-			break
-		} else if isPunctuation(ch) {
-			literal += string(ch)
 			i++
-			break
 		}
-		i++
+		l.columnPosition = i
+		return line[start:l.columnPosition]
 	}
 
-	l.columnPosition = i
-	return literal
+	// Handle numbers (int or float)
+	if isDigit(ch) || (ch == '.' && start+1 < len(line) && isDigit(line[start+1])) {
+		i := start
+		hasDot := false
+		for i < len(line) {
+			if line[i] == '.' {
+				if hasDot {
+					break
+				}
+				hasDot = true
+			} else if !isDigit(line[i]) {
+				break
+			}
+			i++
+		}
+		l.columnPosition = i
+		return line[start:i]
+	}
+
+	// Handle identifiers and booleans
+	if isLetter(ch) || ch == '_' {
+		i := start
+		for i < len(line) && isAlphanumericOrUnderscore(line[i]) {
+			i++
+		}
+		l.columnPosition = i
+		return line[start:i]
+	}
+
+	// Operators
+	if isOperator(ch) {
+		if ch == '=' && start+1 < len(line) && line[start+1] == '=' {
+			l.columnPosition += 2
+			return "=="
+		}
+		l.columnPosition++
+		return string(ch)
+	}
+
+	// Punctuation
+	if isPunctuation(ch) {
+		l.columnPosition++
+		return string(ch)
+	}
+
+	// Fallback for unknowns
+	l.columnPosition++
+	return string(ch)
 }
 
 // Helper function to check if a character is a letter (A-Z, a-z)

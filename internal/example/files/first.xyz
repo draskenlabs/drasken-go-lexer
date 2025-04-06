@@ -1,1 +1,12 @@
-_,asdasdasd==>=====
+plan {
+    step {
+        task {
+            first = `asdasdasd asdasdasdasd`;
+            second = false;
+            third = 3;
+            fourth = 'asdasdasd';
+            third = "asdasdasd";
+            another = 3.41;
+        }
+    }
+}
